@@ -5,18 +5,22 @@ const EMPTY_TILE = '3';
 
 let turns = 0;
 let boardState = [];
+let draggedTile = null;
 
-// Shuffle array using Fisher-Yates algorithm
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
+/* ================== UTILS ================== */
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-
-  return array;
+  return arr;
 }
 
-// Find coordinates of empty tile
+function isAdjacent(r1, c1, r2, c2) {
+  return Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1;
+}
+
 function findEmptyTile() {
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -25,100 +29,170 @@ function findEmptyTile() {
       }
     }
   }
-
-  return null;
 }
 
-// Create and display the game board
-function createBoard() {
-  const boardElement = document.getElementById('board');
-  boardElement.innerHTML = '';
+/* ================== CORE MOVE LOGIC ================== */
 
-  // Create tile numbers (1-9, where 3 is empty)
-  let tileNumbers = ['1', '2', '4', '5', '6', '7', '8', '9', EMPTY_TILE];
+function moveTile(fr, fc, tr, tc, img) {
+  const fromTile = document.querySelector(`.tile[data-row="${fr}"][data-col="${fc}"]`);
+  const toTile = document.querySelector(`.tile[data-row="${tr}"][data-col="${tc}"]`);
 
-  // Shuffle non-empty tiles, keep empty at the end
-  tileNumbers = shuffleArray(tileNumbers.slice(0, 8));
-  tileNumbers.push(EMPTY_TILE);
+  img.style.transform = 'scale(1.05)';
 
-  // Initialize board state
-  boardState = [];
+  setTimeout(() => {
+    toTile.innerHTML = '';
+    toTile.appendChild(img);
+    toTile.classList.remove('empty');
 
-  for (let r = 0; r < ROWS; r++) {
-    boardState[r] = [];
+    fromTile.innerHTML = '';
+    fromTile.classList.add('empty');
 
-    for (let c = 0; c < COLS; c++) {
-      const index = r * COLS + c;
-      const tileNumber = tileNumbers[index];
-      boardState[r][c] = tileNumber;
+    img.style.transform = '';
 
-      // Create tile element
-      const tile = document.createElement('div');
-      tile.className = 'tile';
-      tile.dataset.row = r;
-      tile.dataset.col = c;
+    boardState[tr][tc] = img.dataset.number;
+    boardState[fr][fc] = EMPTY_TILE;
 
-      if (tileNumber !== EMPTY_TILE) {
-        const img = document.createElement('img');
-        img.src = IMG_PATH + tileNumber + '.jpg';
-        img.alt = `Piece ${tileNumber}`;
-        img.dataset.number = tileNumber;
-
-        // Add click handler
-        img.addEventListener('click', tileClickHandler);
-
-        tile.appendChild(img);
-      } else {
-        tile.classList.add('empty');
-      }
-
-      boardElement.appendChild(tile);
-    }
-  }
-
-  // Reset turn counter
-  turns = 0;
-  document.getElementById('turns').textContent = turns;
-}
-
-// Handle tile click
-function tileClickHandler(event) {
-  const clickedImg = event.target;
-  const tile = clickedImg.parentElement;
-  const row = parseInt(tile.dataset.row);
-  const col = parseInt(tile.dataset.col);
-
-  const emptyPos = findEmptyTile();
-
-  // Check if tile can be moved (adjacent to empty)
-  const rowDiff = Math.abs(row - emptyPos.row);
-  const colDiff = Math.abs(col - emptyPos.col);
-
-  if ((rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1)) {
-    // Swap tile with empty space
-    const emptyTile = document.querySelector(`.tile[data-row="${emptyPos.row}"][data-col="${emptyPos.col}"]`);
-
-    emptyTile.innerHTML = '';
-    emptyTile.appendChild(clickedImg);
-    emptyTile.classList.remove('empty');
-
-    tile.innerHTML = '';
-    tile.classList.add('empty');
-
-    // Update board state
-    boardState[emptyPos.row][emptyPos.col] = clickedImg.dataset.number;
-    boardState[row][col] = EMPTY_TILE;
-
-    // Update turn counter
     turns++;
     document.getElementById('turns').textContent = turns;
 
-    // Check for win
     checkWin();
+  }, 50);
+
+  highlightMoves();
+  vibrate();
+}
+
+function vibrate() {
+  if (navigator.vibrate) {
+    navigator.vibrate(20);
   }
 }
 
-// Check if puzzle is solved
+/* ================== EVENTS ================== */
+
+function handleDragStart(e) {
+  draggedTile = e.target;
+  draggedTile.classList.add('dragging');
+}
+
+function handleDragEnd() {
+  draggedTile?.classList.remove('dragging');
+  draggedTile = null;
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  if (!draggedTile) return;
+
+  const fromTile = draggedTile.parentElement;
+  const toTile = e.currentTarget;
+
+  if (!toTile.classList.contains('empty')) return;
+
+  const fr = +fromTile.dataset.row;
+  const fc = +fromTile.dataset.col;
+  const tr = +toTile.dataset.row;
+  const tc = +toTile.dataset.col;
+
+  if (isAdjacent(fr, fc, tr, tc)) {
+    moveTile(fr, fc, tr, tc, draggedTile);
+  }
+
+  draggedTile.classList.remove('dragging');
+  draggedTile = null;
+}
+
+function handleClick(e) {
+  const img = e.target;
+  const tile = img.parentElement;
+
+  const r = +tile.dataset.row;
+  const c = +tile.dataset.col;
+
+  const empty = findEmptyTile();
+
+  if (isAdjacent(r, c, empty.row, empty.col)) {
+    moveTile(r, c, empty.row, empty.col, img);
+  }
+}
+
+/* ================== TILE / BOARD ================== */
+
+function createTile(r, c, number) {
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.dataset.row = r;
+  tile.dataset.col = c;
+
+  tile.addEventListener('dragover', e => e.preventDefault());
+  tile.addEventListener('drop', handleDrop);
+
+  if (number === EMPTY_TILE) {
+    tile.classList.add('empty');
+    return tile;
+  }
+
+  const img = document.createElement('img');
+  img.src = `${IMG_PATH}${number}.jpg`;
+  img.alt = `Piece ${number}`;
+  img.dataset.number = number;
+  img.draggable = true;
+
+  img.addEventListener('dragstart', handleDragStart);
+  img.addEventListener('dragend', handleDragEnd);
+  img.addEventListener('click', handleClick);
+
+  tile.appendChild(img);
+  return tile;
+}
+
+function createBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+
+  let tiles = shuffleArray(['1', '2', '4', '5', '6', '7', '8', '9']);
+  tiles.push(EMPTY_TILE);
+
+  boardState = [];
+  turns = 0;
+  document.getElementById('turns').textContent = turns;
+
+  for (let r = 0; r < ROWS; r++) {
+    boardState[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      const num = tiles[r * COLS + c];
+      boardState[r][c] = num;
+      board.appendChild(createTile(r, c, num));
+    }
+  }
+
+  highlightMoves();
+}
+
+function highlightMoves() {
+  document.querySelectorAll('.tile').forEach(t => t.classList.remove('hint'));
+
+  const empty = findEmptyTile();
+
+  const dirs = [
+    [1, 0], [-1, 0],
+    [0, 1], [0, -1]
+  ];
+
+  dirs.forEach(([dr, dc]) => {
+    const r = empty.row + dr;
+    const c = empty.col + dc;
+
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+      const tile = document.querySelector(`.tile[data-row="${r}"][data-col="${c}"]`);
+      tile?.classList.add('hint');
+    }
+  });
+}
+
+
+/* ================== WIN CHECK ================== */
+
 function checkWin() {
   const winState = [
     ['1', '2', '4'],
@@ -128,24 +202,20 @@ function checkWin() {
 
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (boardState[r][c] !== winState[r][c]) {
-        return false;
-      }
+      if (boardState[r][c] !== winState[r][c]) return;
     }
   }
 
-  // Puzzle solved!
+  document.getElementById('board').classList.add('win');
+
   setTimeout(() => {
     alert(`🎉 Congratulations! You solved the puzzle in ${turns} moves!`);
-  }, 100);
-
-  return true;
+  }, 300);
 }
 
-// Initialize game
+/* ================== INIT ================== */
+
 document.addEventListener('DOMContentLoaded', () => {
   createBoard();
-
-  // Add shuffle button functionality
   document.getElementById('shuffle-btn').addEventListener('click', createBoard);
 });
